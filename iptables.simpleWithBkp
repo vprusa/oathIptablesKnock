@@ -1,0 +1,97 @@
+*filter
+:INPUT DROP [0:0]
+:FORWARD DROP [0:0]
+:OUTPUT ACCEPT [0:0]
+:PRIMARY_KNOCKING - [0:0]
+:PRIMARY_KNOCK1 - [0:0]
+:PRIMARY_KNOCK2 - [0:0]
+:PRIMARY_KNOCK3 - [0:0]
+:PRIMARY_KNOCKPASSED - [0:0]
+:BKP_KNOCKING - [0:0]
+:BKP_KNOCK1 - [0:0]
+:BKP_KNOCK2 - [0:0]
+:BKP_KNOCK3 - [0:0]
+:BKP_KNOCKPASSED - [0:0]
+
+-A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+-A INPUT -i lo -j ACCEPT
+
+# Custom rules
+# ...
+
+
+#This is from a ufw rule set, I place it first to make sure that it gets process before any ufw rules.
+#-I INPUT 1 -j PRIMARY_KNOCKING
+-A INPUT -j PRIMARY_KNOCKING
+
+#Keeps track of the knock state, i.e. what stage of the knock process the client is in
+-A PRIMARY_KNOCKING -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+-A PRIMARY_KNOCKING -m recent --rcheck --seconds 30 --name PRIMARY_KNOCK3 -j PRIMARY_KNOCKPASSED
+-A PRIMARY_KNOCKING -m recent --rcheck --name PRIMARY_KNOCK2 -j PRIMARY_KNOCK3
+-A PRIMARY_KNOCKING -m recent --rcheck --name PRIMARY_KNOCK1 -j PRIMARY_KNOCK2
+-A PRIMARY_KNOCKING -j PRIMARY_KNOCK1
+
+#First knock chain
+-A PRIMARY_KNOCK1 -j LOG --log-level 4 --log-prefix "In knock 1: "
+-A PRIMARY_KNOCK1 -p tcp --dport 10001 -m recent --name PRIMARY_KNOCK1 --set -j DROP
+-A PRIMARY_KNOCK1 -p udp --dport 10001 -m recent --name PRIMARY_KNOCK1 --set -j DROP
+-A PRIMARY_KNOCK1 -j BKP_KNOCKING
+
+#Second knock chain
+-A PRIMARY_KNOCK2 -m recent --name PRIMARY_KNOCK1 --remove
+-A PRIMARY_KNOCK2 -j LOG --log-level 4 --log-prefix "In knock 2: "
+-A PRIMARY_KNOCK2 -p tcp --dport 10002 -m recent --name PRIMARY_KNOCK2 --set -j DROP
+-A PRIMARY_KNOCK2 -p udp --dport 10002 -m recent --name PRIMARY_KNOCK2 --set -j DROP
+-A PRIMARY_KNOCK2 -j PRIMARY_KNOCK1
+
+#Third knock chain
+-A PRIMARY_KNOCK3 -m recent --name PRIMARY_KNOCK2 --remove
+-A PRIMARY_KNOCK3 -j LOG --log-level 4 --log-prefix "In knock 3: "
+-A PRIMARY_KNOCK3 -p tcp --dport 10003 -m recent --name PRIMARY_KNOCK3 --set -j DROP
+-A PRIMARY_KNOCK3 -p udp --dport 10003 -m recent --name PRIMARY_KNOCK3 --set -j DROP
+-A PRIMARY_KNOCK3 -j PRIMARY_KNOCK1
+
+#After a successful knock, allow the target to port 22
+-A PRIMARY_KNOCKPASSED -m recent --name AUTH3 --remove
+-A PRIMARY_KNOCKPASSED -j LOG --log-level 4 --log-prefix "Knock accepted!: "
+-A PRIMARY_KNOCKPASSED -p tcp --dport 22 -j ACCEPT
+-A PRIMARY_KNOCKPASSED -j PRIMARY_KNOCK1
+
+# Back/backup door for testing purposes
+# Use just once and then change ports
+-A INPUT -j BKP_KNOCKING
+
+#Keeps track of the knock state, i.e. what stage of the knock process the client is in
+-A BKP_KNOCKING -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+-A BKP_KNOCKING -m recent --rcheck --seconds 30 --name BKP_KNOCK3 -j BKP_KNOCKPASSED
+-A BKP_KNOCKING -m recent --rcheck --name BKP_KNOCK2 -j BKP_KNOCK3
+-A BKP_KNOCKING -m recent --rcheck --name BKP_KNOCK1 -j BKP_KNOCK2
+-A BKP_KNOCKING -j BKP_KNOCK1
+
+#First knock chain
+-A BKP_KNOCK1 -j LOG --log-level 4 --log-prefix "In knock 1: "
+-A BKP_KNOCK1 -p tcp --dport 20001 -m recent --name BKP_KNOCK1 --set -j DROP
+-A BKP_KNOCK1 -p udp --dport 20001 -m recent --name BKP_KNOCK1 --set -j DROP
+-A BKP_KNOCK1 -j DROP
+
+#Second knock chain
+-A BKP_KNOCK2 -m recent --name BKP_KNOCK1 --remove
+-A BKP_KNOCK2 -j LOG --log-level 4 --log-prefix "In knock 2: "
+-A BKP_KNOCK2 -p tcp --dport 20002 -m recent --name BKP_KNOCK2 --set -j DROP
+-A BKP_KNOCK2 -p udp --dport 20002 -m recent --name BKP_KNOCK2 --set -j DROP
+-A BKP_KNOCK2 -j BKP_KNOCK1
+
+#Third knock chain
+-A BKP_KNOCK3 -m recent --name BKP_KNOCK2 --remove
+-A BKP_KNOCK3 -j LOG --log-level 4 --log-prefix "In knock 3: "
+-A BKP_KNOCK3 -p tcp --dport 20003 -m recent --name BKP_KNOCK3 --set -j DROP
+-A BKP_KNOCK3 -p udp --dport 20003 -m recent --name BKP_KNOCK3 --set -j DROP
+-A BKP_KNOCK3 -j BKP_KNOCK1
+
+#After a successful knock, allow the target to port 22
+-A BKP_KNOCKPASSED -m recent --name AUTH3 --remove
+-A BKP_KNOCKPASSED -j LOG --log-level 4 --log-prefix "Knock accepted!: "
+-A BKP_KNOCKPASSED -p tcp --dport 22 -j ACCEPT
+-A BKP_KNOCKPASSED -j BKP_KNOCK1
+
+COMMIT
